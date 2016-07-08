@@ -1,60 +1,29 @@
-// Package inject is a simple dependency injector.
-//
-// Injection occurrs by calling functions passed to `Injector.Inject` using
-// values passed duing the construction of the Injector. Values may be passed
-// or required in any order, but there may only be one of each exact type. Use
-// new named types to pass multiple values of the same underlying value, as in
-// `type A int; inject.New(0, A(1))`. Also, injected functions may only return
-// one value (and optionally an error).
-//
-// With these heavy restrictions, you might wonder how this could be useful.
-// The answer is that this is intended to inject long-lived values into functions
-// **that return closures**. Specifically this intended as an alternative to
-// global variables or giant `server` structs with everything under the sun in them
-// and methods on it for handing http requests.
-//
-// Instead of this:
-//
-//     type server struct {
-//         db  *sql.DB
-//         log *log.Logger
-//         t   *template.Template
-//         mut sync.RWMutex
-//         // ...
-//     }
-//     // home has access to *all* fields, even ones it doesn't need,
-//     // breaking componentation and making it harder to mock and test.
-//     func (s *server) home(w http.ResponseWriter, req *http.Request) {
-//         s.t.ExecuteTemplate(w, "home.html", stuff(s.db))
-//     }
-//     func main() {
-//         s := setupServer()
-//         http.HandleFunc("/", s.home)
-//         http.ListendAndServe("", nil)
-//     }
-//
-// You can do this:
-//
-//     // it's perfectly clear what home needs, and it's easy to mock its' dependencies
-//     func home(t *template.Template, db *sql.DB) http.Handler {
-//         return http.HandleFunc(func(w http.ResponseWriter, req *http.Request) {
-//             s.t.ExecuteTemplate(w, "home.html", stuff(s.db))
-//         })
-//     }
-//     func main() {
-//         db, tmpl := deps()
-//         di := inject.New(db, tmpl)
-//         http.Handle("/", di(home)) // even better: make your router do this!
-//         http.ListeAndServe(":80", nil)
-//     }
-//
-// Injector is an interface so you can accept an Injector in your library without
-// directly depending on a package that uses reflect. Just copy the definition of
-// the `Injector` interface into your library and use it instead. Keep your
-// dependency tree clean, but allow your users to excercise this power if they want!
-//
-// Under MIT license.
-//
+/*
+Package inject is a simple dependency injector.
+
+Injection occurrs by passing a function to Injector.Inject. That function is
+then called dynamically, using values passed duing the construction of the
+Injector as arguments. Values may be passed or required in any order, but there
+may only be one of each exact type. Use new named types to pass multiple
+instances of the same underlying value, as in `type A int; inject.New(0,A(1))`.
+Also, injected functions may only return one value (and optionally an error).
+
+With such heavy restrictions, one might wonder if it's this useless on purpose.
+The answer is that this is intended to inject long-lived values into functions
+*that return closures*. For example, this can be an alternative to global
+variables or giant server structs with everything under the sun in them and
+methods on it for handing http requests. With this pattern injection happens
+only once, at startup, so the cost of reflection is not paid on each request.
+You can find a fleshed out example http server in the example dir.
+
+Injector is an interface so you can accept an Injector in your library without
+directly depending on a package that uses reflect. Just copy the definition of
+the `Injector` interface into your library and your users can pass any
+compatible implementation (like this one) to use it. Keep your dependency tree
+clean, and still give your users injection!
+
+Under MIT license.
+*/
 package inject
 
 import (
@@ -77,19 +46,15 @@ type Injector interface {
 
 // New returns a new Injector using the args for injection.
 //
-// vaccines are the values injected into functions passed to Inject.
-// There can only be one value of a given type per Injector
-func New(vaccines ...interface{}) (Injector, error) {
+// args are the values injected into functions passed to Inject.
+// There can only be one value of a given type per Injector.
+func New(args ...interface{}) (Injector, error) {
 	n := needle{}
-	for _, v := range vaccines {
+	for _, v := range args {
 		typ, val := reflect.TypeOf(v), reflect.ValueOf(v)
 		if old, ok := n[typ]; ok {
-			return nil, fmt.Errorf("cannot inject two values of the same type. first: %#v (%T), second: %#v (%T)",
-				old.Interface(),
-				old.Interface(),
-				val.Interface(),
-				val.Interface(),
-			)
+			oi, vi := old.Interface(), val.Interface()
+			return nil, fmt.Errorf("cannot inject two values of the same type. first: %#v (%T), second: %#v (%T)", oi, oi, vi, vi)
 		}
 		n[typ] = val
 	}
