@@ -61,6 +61,14 @@ func New(args ...interface{}) (Injector, error) {
 	return &n, nil
 }
 
+// Must can wrap Inject and panics if err is not nil
+func Must(i interface{}, err error) interface{} {
+	if err != nil {
+		panic(err)
+	}
+	return i
+}
+
 type needle map[reflect.Type]reflect.Value
 
 func (n needle) Inject(fn interface{}) (interface{}, error) {
